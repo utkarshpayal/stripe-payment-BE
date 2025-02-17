@@ -5,10 +5,13 @@ const stripe = require("stripe")(
 );
 const { v4: uuidv4 } = require("uuid");
 const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
+const jwtDecode = require("jwt-decode");
+
+const decoded= '';
 
 // Connect to MongoDB
 mongoose.connect("mongodb://localhost:27017/payments", {});
-
 //payment schema
 const PaymentSchema = new mongoose.Schema({
   paymentId: String,
@@ -34,6 +37,7 @@ const GPUSchema = new mongoose.Schema({
   key: { type: String, required: true, minlength: 16, maxlength: 64 },
   createdAt: { type: Date, default: Date.now },
   status: { type: String, default: "pending" },
+  isActive: { type: Boolean, default: true },
   connectionTimes: [
     {
       peerId: { type: String, required: true },
@@ -92,17 +96,17 @@ app.post(
             { $set: { status: "success", sessionId: session.id } }
           );
 
-         const payment = await Payment.findOne({ paymentId: paymentId });
-         const gpu = await Gpu.findOne({ id: payment.id });
-         if (!gpu) {
-           throw new Error("GPU not found");
-         }
-         
-         // Update the GPU document's status to 'success'
-         gpu.status = 'success';
-         
-         // Save the updated GPU document
-         await gpu.save();
+          const payment = await Payment.findOne({ paymentId: paymentId });
+          const gpu = await Gpu.findOne({ id: payment.id });
+          if (!gpu) {
+            throw new Error("GPU not found");
+          }
+
+          // Update the GPU document's status to 'success'
+          gpu.status = "success";
+          gpu.isActive = false;
+          // Save the updated GPU document
+          await gpu.save();
 
           if (updatedPayment.modifiedCount === 0) {
             console.error("Payment not found or not updated.");
@@ -120,6 +124,28 @@ app.post(
     res.json({ received: true });
   }
 );
+
+app.post("/add-gpu", async (req, res) => {
+  try {
+    const { hexcode } = req.body;
+    console.log(hexcode);
+
+    try {
+      console.log("Inside JWT verification");
+      const decodedKey = jwt.verify(hexcode, "secret");
+      console.log("Decoded Key:", decodedKey);
+
+      // Send the URL as a JSON response
+      res.json({ url: `http://localhost:5173/add-gpus/${hexcode}` });
+    } catch (e) {
+      console.error("JWT verification failed:", e);
+      res.status(400).json({ error: "Invalid token" });
+    }
+  } catch (e) {
+    console.error("Server error:", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 // Get Payment Status
 app.get("/status/:paymentId", async (req, res) => {
@@ -151,7 +177,7 @@ app.get("/status/:paymentId", async (req, res) => {
       isPaid: true,
       objectId: payment._id,
       key: gpuRecord.key,
-      id: gpuRecord.id
+      id: gpuRecord.id,
     });
   } catch (error) {
     console.error("Error checking payment status:", error);
@@ -162,7 +188,8 @@ app.get("/status/:paymentId", async (req, res) => {
 // Get all GPUs route
 app.get("/gpus", async (req, res) => {
   try {
-    const gpus = await Gpu.find();
+        const gpus = await Gpu.find();
+    // const gpus = await Gpu.find({ isActive: true });
 
     if (!gpus.length) {
       return res.status(404).json({ message: "No GPUs found" });
@@ -288,9 +315,12 @@ app.get("/payment/:id", async (req, res) => {
 });
 
 // Add a new GPU
-app.post("/add-gpus", async (req, res) => {
+app.post("/add-gpus/:key", async (req, res) => {
   try {
-    const { host, gpu, vcpu, ram, network, storage, price, time, key } =
+    const { key } = req.params;
+    const decodedKey = jwt.verify(key, "secret");
+    console.log("Decoded Key:", decodedKey.key), decodedKey.timeInSeconds;
+    const { host, gpu, vcpu, ram, network, storage, price, time } =
       req.body;
 
     if (
@@ -300,12 +330,11 @@ app.post("/add-gpus", async (req, res) => {
       !ram ||
       !network ||
       !storage ||
-      !price ||
-      !key
+      !price 
     ) {
       return res.status(400).json({ message: "All fields are required" });
     }
-
+console.log(decoded)
     // Create a new GPU entry
     const newGpu = new Gpu({
       id: uuidv4(),
@@ -316,8 +345,9 @@ app.post("/add-gpus", async (req, res) => {
       network,
       storage,
       price,
-      time,
-      key,
+      time: decodedKey.timeInSeconds,
+      key: decodedKey.key,
+      isActive: true,
       createdAt: new Date(),
     });
 
