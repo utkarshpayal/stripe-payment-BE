@@ -11,7 +11,7 @@ const jwtDecode = require("jwt-decode");
 const decoded= '';
 
 // Connect to MongoDB
-mongoose.connect("mongodb://localhost:27017/payments", {});
+mongoose.connect("mongodb+srv://utkarsh12march2004:n3uaJlnoyOQOdWH3@cluster0.luhepax.mongodb.net/auth-db?retryWrites=true&w=majority&appName=Cluster0/payments", {});
 //payment schema
 const PaymentSchema = new mongoose.Schema({
   paymentId: String,
